@@ -167,15 +167,28 @@ void EveWorkflowHelper::drawTPCClusters(GID gid, float trackTime)
 {
   const auto& trc = mRecoCont.getTPCTrack(gid);
   auto refs = mRecoCont.getTPCTracksClusterRefs();
+/*
+    const auto& elParam = ParameterElectronics::Instance();
+    mTPCTimeBinMUS = elParam.ZbinWidth;
+    float clusterTimeBinOffset = (*mTrackTimes)[iSeed] / mTPCTimeBinMUS;
 
-  /*
-    int entry0 = trc.getClusterEntry(gid.getIndex());                 // correct?
-    int ncl = trc.getNumberOfClusters();
-    for (int icl=0;icl<ncl;icl++) {
-        const auto& pnt = mITSClustersArray[ refs[icl] ];
-        drawPoint(pnt);
+    // store the TPC cluster positions
+    for (int iCl = trc.getNClusterReferences(); iCl--;) {
+        uint8_t sector, row;
+        uint32_t clusterIndexInRow;
+        const auto& clTPC = trc.getCluster(mTPCTracksClusIdx, iCl, *mTPCClusterIdxStruct, sector, row);
+        float clTPCX;
+        std::array<float, 2> clTPCYZ;
+        mFastTransform->TransformIdeal(sector, row, clTPC.getPad(), clTPC.getTime(), clTPCX, clTPCYZ[0], clTPCYZ[1], clusterTimeBinOffset);
+        sector %= SECTORSPERSIDE;
+        mCache[row].clAvailable = 1;
+        mCache[row].clY = clTPCYZ[0];
+        mCache[row].clZ = clTPCYZ[1];
+        mCache[row].clAngle = o2::math_utils::sector2Angle(sector);
     }
-     */
+*/
+
+
 }
 
 void EveWorkflowHelper::drawTPC(GID gid, float trackTime)
