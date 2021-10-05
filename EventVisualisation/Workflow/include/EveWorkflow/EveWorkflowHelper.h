@@ -20,6 +20,7 @@
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "EveWorkflow/EveConfiguration.h"
 #include "EventVisualisationDataConverter/VisualisationEvent.h"
+#include "MFTBase/GeometryTGeo.h"
 
 namespace o2::event_visualisation
 {
@@ -60,7 +61,9 @@ class EveWorkflowHelper
   }};
 
  public:
+  EveWorkflowHelper() ;
   static std::vector<PNT> getTrackPoints(const o2::track::TrackPar& trc, float minR, float maxR, float maxStep);
+  std::vector<PNT> getMFTTrackPoints(o2::mft::TrackMFT& trc, float maxStep);
   void selectTracks(const CalibObjectsConst* calib, GID::mask_t maskCl,
                     GID::mask_t maskTrk, GID::mask_t maskMatch);
   template <typename Functor>
@@ -68,17 +71,24 @@ class EveWorkflowHelper
   void draw(std::string jsonPath, int numberOfFiles, int numberOfTracks = -1);
   void drawTPC(GID gid, float trackTime);
   void drawITS(GID gid, float trackTime);
+  void drawMFT(GID gid, float trackTime);
+  void drawMCH(GID gid, float trackTime);
   void drawITSTPC(GID gid, float trackTime);
   void drawITSTPCTOF(GID gid, float trackTime);
   void drawITSClusters(GID gid, float trackTime);
   void drawTPCClusters(GID gid, float trackTime);
-  void drawPoint(o2::BaseCluster<float> pnt);
-  void prepareITSClusters(std::string dictfile = "");
+  void drawMFTClusters(GID gid, float trackTime);
+  void drawPoint(o2::BaseCluster<float> pnt, float time) {  mEvent.addCluster(pnt.getX(), pnt.getY(), pnt.getZ(), time);}
+  void drawPoint(const float xyz[], float time){  mEvent.addCluster(xyz[0],xyz[1],xyz[2], time);}
+  void prepareITSClusters(std::string dictfile = "");       // fills mITSClustersArray
+  void prepareMFTClusters(std::string dictfile = "");       // fills mMFTClustersArray
   o2::globaltracking::RecoContainer mRecoCont;
   o2::globaltracking::RecoContainer& getRecoContainer() { return mRecoCont; }
   TracksSet mTrackSet;
   o2::event_visualisation::VisualisationEvent mEvent;
   std::vector<o2::BaseCluster<float>> mITSClustersArray;
+  std::vector<o2::BaseCluster<float>> mMFTClustersArray;
+  o2::mft::GeometryTGeo* mMFTGeom;
 };
 } // namespace o2::event_visualisation
 
