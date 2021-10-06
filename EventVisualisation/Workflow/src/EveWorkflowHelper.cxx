@@ -89,7 +89,7 @@ void EveWorkflowHelper::draw(std::string jsonPath, int numberOfFiles, int number
 
 std::vector<PNT> EveWorkflowHelper::getTrackPoints(const o2::track::TrackPar& trc, float minR, float maxR, float maxStep)
 {
-  // adjust minR according to real track start fro track starting point
+  // adjust minR according to real track start from track starting point
   float rMin = std::sqrt(trc.getX() * trc.getX() + trc.getY() * trc.getY());
   if (rMin > minR) {
     minR = rMin;
@@ -102,11 +102,11 @@ std::vector<PNT> EveWorkflowHelper::getTrackPoints(const o2::track::TrackPar& tr
   if (xMax > 0) {
     xMax = std::sqrt(xMax);
   }
-  //LOG(INFO) << "R: " << minR << " " << maxR << " || X: " << xMin << " " << xMax;
+
   float dx = (xMax - xMin) / nSteps;
   auto tp = trc;
   float dxmin = std::abs(xMin - tp.getX()), dxmax = std::abs(xMax - tp.getX());
-  bool res = false;
+
   if (dxmin > dxmax) { //start from closest end
     std::swap(xMin, xMax);
     dx = -dx;
@@ -209,13 +209,15 @@ void EveWorkflowHelper::drawITSTPCTOF(GID gid, float trackTime)
 void EveWorkflowHelper::drawITSClusters(GID gid, float trackTime)
 {
     LOG(INFO) << "+++++++++++++ drawITSClusters" ;
-  const auto& trc = mRecoCont.getITSTrack(gid);
-  auto refs = mRecoCont.getITSTracksClusterRefs();
-  //int entry0 = trc.getClusterEntry(gid.getIndex()); // TODO correct?
-  int ncl = trc.getNumberOfClusters();
-  for (int icl = 0; icl < ncl; icl++) {
-    const auto& pnt = mITSClustersArray[refs[icl]];
-    drawPoint(pnt, trackTime);
+  const auto& itsTrack = mRecoCont.getITSTrack(gid);
+  auto noOfClusters = itsTrack.getNumberOfClusters();       // number of clusters in MFT Track
+  auto offset = itsTrack.getFirstClusterEntry(); // first external cluster index offset:
+  auto refs = mRecoCont.getITSTracksClusterRefs();        // list of references to clusters, offset:offset+no
+  auto clusters = mRecoCont.getMFTClusters();
+  for (int icl = noOfClusters - 1; icl > -1; --icl) {
+    const auto& pnt = clusters[refs[offset+icl]];
+    auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
+    drawPoint(gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z(), trackTime);
   }
     LOG(INFO) << "------------- drawITSClusters" ;
 }
@@ -260,13 +262,9 @@ std::vector<PNT> EveWorkflowHelper::getMFTTrackPoints(o2::mft::TrackMFT &mftTrac
 
 
 // TPC cluseters for given TPC track (gid)
-//  time should be in time bins
 void EveWorkflowHelper::drawTPCClusters(GID gid, float trackTime)
 {
-    //LOG(INFO) << "++++++++++++++++ EveWorkflowHelper::drawTPCClusters" ;
-    LOG(INFO) << "++++++++++++++++ EveWorkflowHelper::drawTPCClusters" << gid;
   const auto& trc = mRecoCont.getTPCTrack(gid);
-
   auto mTPCTracksClusIdx = mRecoCont.getTPCTracksClusterRefs();
   auto mTPCClusterIdxStruct = &mRecoCont.getTPCClusters();
   const auto& elParam = o2::tpc::ParameterElectronics::Instance();
@@ -274,45 +272,32 @@ void EveWorkflowHelper::drawTPCClusters(GID gid, float trackTime)
   auto mTPCTimeBinMUS = elParam.ZbinWidth;
   float clusterTimeBinOffset = trackTime / mTPCTimeBinMUS;
   std::unique_ptr<gpu::TPCFastTransform> fastTransform = (o2::tpc::TPCFastTransformHelperO2::instance()->create(0));
-  auto mFastTransform = std::move(fastTransform);
 
   // store the TPC cluster positions
   for (int iCl = trc.getNClusterReferences(); iCl--;) {
-      uint8_t sector, row;     // TODO - how to set sector ???
-
+      uint8_t sector, row;
       const auto& clTPC = trc.getCluster(mTPCTracksClusIdx, iCl, *mTPCClusterIdxStruct, sector, row);
-      //clTPC.getTime() it is in time beans should be converted to ms by multiply   track time may be different
-      //
-      const float TB2MUSEC = o2::constants::lhc::LHCOrbitMUS / o2::constants::lhc::LHCMaxBunches * 8;
-
-      //sector = clTPC.getPad();    // TODO - how to get sector ???
-      float clTPCX;
-      std::array<float, 2> clTPCYZ;
-      mFastTransform->TransformIdeal(sector, row, clTPC.getPad(), clTPC.getTime(), clTPCX, clTPCYZ[0], clTPCYZ[1], clusterTimeBinOffset);  // which time should used here? this olso time means
       sector %= o2::tpc::SECTORSPERSIDE;
 
-      double xyz[] = {o2::tpc::param::RowX[row],clTPCYZ[0],clTPCYZ[1]};
-      o2::math_utils::rotateZd(o2::tpc::param::RowX[row], xyz[0], xyz[1], o2::math_utils::sector2Angle(sector) );
-      mEvent.addCluster(xyz[0], xyz[1], xyz[2], trackTime);
+    std::array<float, 3> xyz;
+    fastTransform->TransformIdeal(sector, row, clTPC.getPad(), clTPC.getTime(), xyz[0], xyz[1], xyz[2], clusterTimeBinOffset);
+    o2::math_utils::rotateZ(xyz, o2::math_utils::sector2Angle(sector%o2::tpc::SECTORSPERSIDE) );
+    mEvent.addCluster(xyz[0], xyz[1], xyz[2], trackTime);
   }
-    //LOG(INFO) << "------------- EveWorkflowHelper::drawTPCClusters" ;
 }
 
 void EveWorkflowHelper::drawMFTClusters(GID gid, float trackTime)
 {
-
-    LOG(INFO) << "+++++++++++++++ drawMFTClusters";
   const auto& mftTrack = mRecoCont.getMFTTrack(gid);
   auto noOfClusters = mftTrack.getNumberOfPoints();       // number of clusters in MFT Track
-  auto refs = mRecoCont.getMFTTracksClusterRefs();        // list of references to clusters
+  auto offset = mftTrack.getExternalClusterIndexOffset(); // first external cluster index offset:
+  auto refs = mRecoCont.getMFTTracksClusterRefs();        // list of references to clusters, offset:offset+no
   for (int icl = noOfClusters - 1; icl > -1; --icl) {
-    const auto& pnt = mMFTClustersArray[refs[icl]];
+    const auto& pnt = mMFTClustersArray[refs[offset+icl]];
     auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
     float xyz[] = {gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z()};
     drawPoint(xyz, trackTime);
   }
-    LOG(INFO) << "-------------- drawMFTClusters";
-
 }
 
 void EveWorkflowHelper::drawTPC(GID gid, float trackTime)
