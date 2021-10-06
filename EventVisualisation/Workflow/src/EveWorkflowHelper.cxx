@@ -267,11 +267,10 @@ void EveWorkflowHelper::drawMFTClusters(GID gid, float trackTime)
   const auto& mftTrack = mRecoCont.getMFTTrack(gid);
   auto noOfClusters = mftTrack.getNumberOfPoints();       // number of clusters in MFT Track
   auto offset = mftTrack.getExternalClusterIndexOffset(); // first external cluster index offset:
-  auto refs = mRecoCont.getMFTTracksClusterRefs();        // list of references to clusters, offset:offset+no
+  auto refs = mRecoCont.getMFTTracksClusterRefs();        // list of references to clusters, offset:offset+no  //RP : this could be global, load once per TF.
   for (int icl = noOfClusters - 1; icl > -1; --icl) {
-    const auto& pnt = mMFTClustersArray[refs[offset+icl]];
-    auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
-    drawPoint(gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z(), trackTime);
+    const auto& thisCluster = mMFTClustersArray[refs[offset+icl]];
+    drawPoint(mMFTClustersArray.GetX(), mMFTClustersArray.GetY(), mMFTClustersArray.GetZ(), trackTime);
   }
 }
 
