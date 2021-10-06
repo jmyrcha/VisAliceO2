@@ -21,6 +21,7 @@
 #include "EveWorkflow/EveConfiguration.h"
 #include "EventVisualisationDataConverter/VisualisationEvent.h"
 #include "MFTBase/GeometryTGeo.h"
+#include "ITSBase/GeometryTGeo.h"
 
 namespace o2::event_visualisation
 {
@@ -90,6 +91,7 @@ class EveWorkflowHelper
   std::vector<o2::BaseCluster<float>> mITSClustersArray;
   std::vector<o2::BaseCluster<float>> mMFTClustersArray;
   o2::mft::GeometryTGeo* mMFTGeom;
+  o2::its::GeometryTGeo* mITSGeom;
 };
 } // namespace o2::event_visualisation
 

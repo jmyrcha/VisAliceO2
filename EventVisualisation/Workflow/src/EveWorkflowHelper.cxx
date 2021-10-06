@@ -18,6 +18,7 @@
 #include "DataFormatsTRD/TrackTRD.h"
 
 #include "ITStracking/IOUtils.h"
+#include "MFTTracking/IOUtils.h"
 #include "DataFormatsGlobalTracking/RecoContainerCreateTracksVariadic.h"
 #include "SpacePoints/SpacePointsCalibParam.h"
 #include "DetectorsCommonDataFormats/NameConf.h"
@@ -178,7 +179,7 @@ void EveWorkflowHelper::prepareMFTClusters(std::string dictionaryFile)  // do we
     const auto& patterns = this->mRecoCont.getMFTClustersPatterns();
     auto pattIt = patterns.begin();
     this->mMFTClustersArray.reserve(clusMFT.size());
-    o2::its::ioutils::convertCompactClusters(clusMFT, pattIt, this->mMFTClustersArray, dict);  // it is its not mft
+    o2::mft::ioutils::convertCompactClusters(clusMFT, pattIt, this->mMFTClustersArray, dict);
   }
 }
 
@@ -208,54 +209,29 @@ void EveWorkflowHelper::drawITSTPCTOF(GID gid, float trackTime)
 
 void EveWorkflowHelper::drawITSClusters(GID gid, float trackTime)
 {
-    LOG(INFO) << "+++++++++++++ drawITSClusters" ;
-  const auto& itsTrack = mRecoCont.getITSTrack(gid);
-  auto noOfClusters = itsTrack.getNumberOfClusters();       // number of clusters in MFT Track
-  auto offset = itsTrack.getFirstClusterEntry(); // first external cluster index offset:
-  auto refs = mRecoCont.getITSTracksClusterRefs();        // list of references to clusters, offset:offset+no
-  auto clusters = mRecoCont.getMFTClusters();
-  for (int icl = noOfClusters - 1; icl > -1; --icl) {
-    const auto& pnt = clusters[refs[offset+icl]];
-    auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
-    drawPoint(gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z(), trackTime);
+  const auto& trc = mRecoCont.getITSTrack(gid);
+  auto refs = mRecoCont.getITSTracksClusterRefs();
+  int ncl = trc.getNumberOfClusters();
+  for (int icl = 0; icl < ncl; icl++) {
+    const auto& pnt = mITSClustersArray[refs[icl]];
+    const auto glo = mITSGeom->getMatrixT2G(pnt.getSensorID()) *pnt.getXYZ() ;
+    drawPoint(glo.X(),glo.Y(),glo.Z(), trackTime);
   }
-    LOG(INFO) << "------------- drawITSClusters" ;
 }
 
 
 
 std::vector<PNT> EveWorkflowHelper::getMFTTrackPoints(o2::mft::TrackMFT &mftTrack, float maxStep)
 {
-    LOG(INFO) << "+++++++++++++ EveWorkflowHelper::getMFTTrackPoints" ;
   std::vector<PNT> pnts;                                  // list of created points
   auto noOfClusters = mftTrack.getNumberOfPoints();       // number of clusters in MFT Track
-  auto offset = mftTrack.getExternalClusterIndexOffset(); // TODO first cluster of that track on list of mft cluster refs
-  auto refs = mRecoCont.getMFTTracksClusterRefs();        // list of references to clusters
-  auto MFTClusters = mRecoCont.getMFTClusters();          // list of all clusters
-
-  std::vector<float> zCoordinates ;
-    LOG(INFO) << "+++++++++++++ EveWorkflowHelper::getMFTTrackPoints-1" ;
-
-  for (int icl = noOfClusters - 1; icl > -1; --icl) {
-    const auto& pnt = mMFTClustersArray[refs[icl]];
-    zCoordinates.push_back(pnt.getZ());
+  auto offset = mftTrack.getExternalClusterIndexOffset(); // first external cluster index offset:
+  auto refs = mRecoCont.getMFTTracksClusterRefs();        // list of references to clusters, offset:offset+no
+  for (int mcl = noOfClusters - 1; mcl > -1; --mcl) {
+    const auto& pnt = mMFTClustersArray[refs[mcl+offset]];
+    auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
+    pnts.emplace_back(PNT{gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z()});
   }
-
-  if(zCoordinates.size())                       // should be, just safe
-  {
-    auto minZ = *(std::min_element(zCoordinates.begin(), zCoordinates.end()));  // TODO can we assume that order is preserved?
-    auto maxZ = *(std::max_element(zCoordinates.begin(), zCoordinates.end()));
-      LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++++++++=minZ " << minZ;
-      LOG(INFO) << zCoordinates[0];
-      LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++++++++=maxZ "<< maxZ;
-
-
-    for(float z = minZ; z < maxZ; z+= maxStep)
-      mftTrack.propagateToZlinear(z);         // TODO max_z should be global or cluster coordinate
-      //auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
-    }
-
-    LOG(INFO) << "------------- EveWorkflowHelper::getMFTTrackPoints" ;
   return pnts;
 }
 
@@ -295,15 +271,14 @@ void EveWorkflowHelper::drawMFTClusters(GID gid, float trackTime)
   for (int icl = noOfClusters - 1; icl > -1; --icl) {
     const auto& pnt = mMFTClustersArray[refs[offset+icl]];
     auto gloXYZ = mMFTGeom->getMatrixL2G(pnt.getSensorID()) * pnt.getXYZ();
-    float xyz[] = {gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z()};
-    drawPoint(xyz, trackTime);
+    drawPoint(gloXYZ.X(), gloXYZ.Y(), gloXYZ.Z(), trackTime);
   }
 }
 
 void EveWorkflowHelper::drawTPC(GID gid, float trackTime)
 {
 
-    LOG(INFO) << "+++++++++++++++ drawTPC";
+  //LOG(INFO) << "+++++++++++++++ drawTPC";
   const auto& tr = mRecoCont.getTPCTrack(gid);
   auto vTrack = mEvent.addTrack({.time = static_cast<float>(trackTime * 8 * o2::constants::lhc::LHCBunchSpacingMUS),
                                  .charge = tr.getCharge(),
@@ -318,21 +293,21 @@ void EveWorkflowHelper::drawTPC(GID gid, float trackTime)
     vTrack->addPolyPoint(pnts[ip][0], pnts[ip][1], pnts[ip][2] + dz);
   }
   drawTPCClusters(gid, trackTime);
-    LOG(INFO) << "----------------- drawTPC";
+  //LOG(INFO) << "----------------- drawTPC";
 }
 
 void EveWorkflowHelper::drawITS(GID gid, float trackTime)
 {
-    LOG(INFO) << "+++++++++++++++ drawITS";
+  //LOG(INFO) << "+++++++++++++++ drawITS";
   addTrackToEvent([this, trackTime](GID gid) { return mRecoCont.getITSTrack(gid); }, trackTime, 0.);
   drawITSClusters(gid, trackTime);
-    LOG(INFO) << "---------------- drawITS";
+  //LOG(INFO) << "---------------- drawITS";
 }
 
 
 
 void EveWorkflowHelper::drawMFT(GID gid, float trackTime) {
-    LOG(INFO) << "++++++++++++++++++++++++++drawMFT ";
+    //LOG(INFO) << "++++++++++++++++++++++++++drawMFT ";
     auto tr = mRecoCont.getMFTTrack(gid);
     auto vTrack = mEvent.addTrack({.time = static_cast<float>(trackTime * 8 * o2::constants::lhc::LHCBunchSpacingMUS),
                                           .charge = (int)tr.getCharge(),
@@ -347,7 +322,7 @@ void EveWorkflowHelper::drawMFT(GID gid, float trackTime) {
        vTrack->addPolyPoint(pnts[ip][0], pnts[ip][1], pnts[ip][2] + dz);
     }
     drawMFTClusters(gid, trackTime);
-    LOG(INFO) << "-----------------------------drawMFT ";
+    //LOG(INFO) << "-----------------------------drawMFT ";
 }
 
 
@@ -359,6 +334,9 @@ EveWorkflowHelper::EveWorkflowHelper()
 {
   this->mMFTGeom = o2::mft::GeometryTGeo::Instance();
   this->mMFTGeom->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G));
+
+  this->mITSGeom = o2::its::GeometryTGeo::Instance();
+  this->mITSGeom->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::T2GRot,o2::math_utils::TransformType::L2G));
 }
 
 
