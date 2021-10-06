@@ -308,17 +308,18 @@ void EveWorkflowHelper::drawITS(GID gid, float trackTime)
 void EveWorkflowHelper::drawMFT(GID gid, float trackTime) {
     //LOG(INFO) << "++++++++++++++++++++++++++drawMFT ";
     auto tr = mRecoCont.getMFTTrack(gid);
+    std::vector<float> zPositions = {-40.f, -45.f, -65.f, -85.f}; // Selected z positions to draw the track
+    tr.propagateToZlinear(zPositions[0]); // Fix the track starting position.
     auto vTrack = mEvent.addTrack({.time = static_cast<float>(trackTime),
                                           .charge = (int)tr.getCharge(),
                                           .PID = o2::track::PID::Muon,
                                           .startXYZ = {(float)tr.getX(), (float)tr.getY(), (float)tr.getZ()},
                                           .phi = (float)tr.getPhi(),
-                                          .theta = (float)tr.getTanl(),
+                                          .theta = (float)((180. / TMath::Pi()) * 2. * atan(exp(-tr.getTanl()))),
                                           .source = GID::MFT});
-    auto pnts = getMFTTrackPoints(tr,  4);
-    float dz = 0.0;
-    for (size_t ip = 0; ip < pnts.size(); ip++) {
-       vTrack->addPolyPoint(pnts[ip][0], pnts[ip][1], pnts[ip][2] + dz);
+    for (auto zPos : zPositions) {
+       tr.propagateToZlinear(zPos);
+       vTrack->addPolyPoint((float)tr.getX(), (float)tr.getY(), (float)tr.getZ());
     }
     drawMFTClusters(gid, trackTime);
     //LOG(INFO) << "-----------------------------drawMFT ";
