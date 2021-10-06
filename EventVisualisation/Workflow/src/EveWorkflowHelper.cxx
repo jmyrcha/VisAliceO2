@@ -277,7 +277,6 @@ void EveWorkflowHelper::drawMFTClusters(GID gid, float trackTime)
 
 void EveWorkflowHelper::drawTPC(GID gid, float trackTime)
 {
-
   //LOG(INFO) << "+++++++++++++++ drawTPC";
   const auto& tr = mRecoCont.getTPCTrack(gid);
   auto vTrack = mEvent.addTrack({.time = static_cast<float>(trackTime * 8 * o2::constants::lhc::LHCBunchSpacingMUS),
@@ -309,7 +308,7 @@ void EveWorkflowHelper::drawITS(GID gid, float trackTime)
 void EveWorkflowHelper::drawMFT(GID gid, float trackTime) {
     //LOG(INFO) << "++++++++++++++++++++++++++drawMFT ";
     auto tr = mRecoCont.getMFTTrack(gid);
-    auto vTrack = mEvent.addTrack({.time = static_cast<float>(trackTime * 8 * o2::constants::lhc::LHCBunchSpacingMUS),
+    auto vTrack = mEvent.addTrack({.time = static_cast<float>(trackTime),
                                           .charge = (int)tr.getCharge(),
                                           .PID = o2::track::PID::Muon,
                                           .startXYZ = {(float)tr.getX(), (float)tr.getY(), (float)tr.getZ()},
