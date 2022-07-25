@@ -31,6 +31,10 @@
 #include <string>
 #include <climits>
 
+#ifdef WITH_OPENMP
+#include <omp.h>
+#endif
+
 namespace o2
 {
 namespace its
@@ -80,14 +84,18 @@ void Tracker::clustersToTracks(std::function<void(std::string s)> logger, std::f
 
     total += evaluateTask(&Tracker::findCellsNeighbours, "Neighbour finding", logger, iteration);
     total += evaluateTask(&Tracker::findRoads, "Road finding", logger, iteration);
+    logger(fmt::format("\t- Number of Roads: {}", mTimeFrame->getRoads().size()));
     total += evaluateTask(&Tracker::findTracks, "Track finding", logger);
     total += evaluateTask(&Tracker::extendTracks, "Extending tracks", logger);
   }
 
+  total += evaluateTask(&Tracker::findShortPrimaries, "Short primaries finding", logger);
+  ///TODO: Add desperate tracking, aka the extension of short primaries to recover holes in layer 3
+
   std::stringstream sstream;
   if (constants::DoTimeBenchmarks) {
     sstream << std::setw(2) << " - "
-            << "Timeframe " << mTimeFrameCounter++ << " processing completed in: " << total << "ms";
+            << "Timeframe " << mTimeFrameCounter++ << " processing completed in: " << total << "ms using " << mNThreads << " threads.";
   }
   logger(sstream.str());
 
@@ -256,9 +264,12 @@ void Tracker::findRoads(int& iteration)
 
 void Tracker::findTracks()
 {
-  std::vector<TrackITSExt> tracks;
-  tracks.reserve(mTimeFrame->getRoads().size());
+  std::vector<std::vector<TrackITSExt>> tracks(mNThreads);
+  for (auto& tracksV : tracks) {
+    tracksV.reserve(mTimeFrame->getRoads().size() / mNThreads);
+  }
 
+#pragma omp parallel for num_threads(mNThreads)
   for (auto& road : mTimeFrame->getRoads()) {
     std::vector<int> clusters(mTrkParams[0].NLayers, constants::its::UnusedIndex);
     int lastCellLevel = constants::its::UnusedIndex;
@@ -349,16 +360,25 @@ void Tracker::findTracks()
       continue;
     }
     // temporaryTrack.setROFrame(rof);
-    tracks.emplace_back(temporaryTrack);
+#ifdef WITH_OPENMP
+    int iThread = omp_get_thread_num();
+#else
+    int iThread = 0;
+#endif
+    tracks[iThread].emplace_back(temporaryTrack);
+  }
+
+  for (int iV{1}; iV < mNThreads; ++iV) {
+    tracks[0].insert(tracks[0].end(), tracks[iV].begin(), tracks[iV].end());
   }
 
   if (mApplySmoothing) {
     // Smoothing tracks
   }
-  std::sort(tracks.begin(), tracks.end(),
+  std::sort(tracks[0].begin(), tracks[0].end(),
             [](TrackITSExt& track1, TrackITSExt& track2) { return track1.isBetter(track2, 1.e6f); });
 
-  for (auto& track : tracks) {
+  for (auto& track : tracks[0]) {
     int nShared = 0;
     for (int iLayer{0}; iLayer < mTrkParams[0].NLayers; ++iLayer) {
       if (track.getClusterIndex(iLayer) == constants::its::UnusedIndex) {
@@ -438,6 +458,91 @@ void Tracker::extendTracks()
         }
       }
     }
+  }
+}
+
+void Tracker::findShortPrimaries()
+{
+  if (!mTrkParams[0].FindShortTracks) {
+    return;
+  }
+  auto propagator = o2::base::Propagator::Instance();
+  mTimeFrame->fillPrimaryVerticesXandAlpha();
+
+  for (auto& cell : mTimeFrame->getCells()[0]) {
+    auto& cluster1_glo = mTimeFrame->getClusters()[2][cell.getThirdClusterIndex()];
+    auto& cluster2_glo = mTimeFrame->getClusters()[1][cell.getSecondClusterIndex()];
+    auto& cluster3_glo = mTimeFrame->getClusters()[0][cell.getFirstClusterIndex()];
+    if (mTimeFrame->isClusterUsed(0, cluster1_glo.clusterId) ||
+        mTimeFrame->isClusterUsed(1, cluster2_glo.clusterId) ||
+        mTimeFrame->isClusterUsed(2, cluster3_glo.clusterId)) {
+      continue;
+    }
+
+    std::array<int, 3> rofs{
+      mTimeFrame->getClusterROF(0, cluster3_glo.clusterId),
+      mTimeFrame->getClusterROF(1, cluster2_glo.clusterId),
+      mTimeFrame->getClusterROF(2, cluster1_glo.clusterId)};
+    if (rofs[0] != rofs[1] && rofs[1] != rofs[2] && rofs[0] != rofs[2]) {
+      continue;
+    }
+
+    int rof{rofs[0]};
+    if (rofs[1] == rofs[2]) {
+      rof = rofs[2];
+    }
+
+    auto pvs{mTimeFrame->getPrimaryVertices(rof)};
+    auto pvsXAlpha{mTimeFrame->getPrimaryVerticesXAlpha(rof)};
+
+    const auto& cluster3_tf = mTimeFrame->getTrackingFrameInfoOnLayer(0).at(cluster3_glo.clusterId);
+    TrackITSExt temporaryTrack{buildTrackSeed(cluster1_glo, cluster2_glo, cluster3_glo, cluster3_tf, mTimeFrame->getPositionResolution(0))};
+    temporaryTrack.setExternalClusterIndex(0, cluster3_glo.clusterId, true);
+    temporaryTrack.setExternalClusterIndex(1, cluster2_glo.clusterId, true);
+    temporaryTrack.setExternalClusterIndex(2, cluster1_glo.clusterId, true);
+
+    /// add propagation to the primary vertices compatible with the ROF(s) of the cell
+    bool fitSuccess{false};
+
+    TrackITSExt bestTrack{temporaryTrack}, backup{temporaryTrack};
+    float bestChi2{std::numeric_limits<float>::max()};
+    for (int iV{0}; iV < (int)pvs.size(); ++iV) {
+      temporaryTrack = backup;
+      if (!temporaryTrack.rotate(pvsXAlpha[iV][1])) {
+        continue;
+      }
+      if (!propagator->propagateTo(temporaryTrack, pvsXAlpha[iV][0], true)) {
+        continue;
+      }
+
+      float pvRes{mTrkParams[0].PVres / std::sqrt(float(pvs[iV].getNContributors()))};
+      const float posVtx[2]{0.f, pvs[iV].getZ()};
+      const float covVtx[3]{pvRes, 0.f, pvRes};
+      float chi2 = temporaryTrack.getPredictedChi2(posVtx, covVtx);
+      if (chi2 < bestChi2) {
+        if (!temporaryTrack.track::TrackParCov::update(posVtx, covVtx)) {
+          continue;
+        }
+        bestTrack = temporaryTrack;
+        bestChi2 = chi2;
+      }
+    }
+
+    bestTrack.resetCovariance();
+    fitSuccess = fitTrack(bestTrack, 0, mTrkParams[0].NLayers, 1, mTrkParams[0].FitIterationMaxChi2[0]);
+    if (!fitSuccess) {
+      continue;
+    }
+    bestTrack.getParamOut() = bestTrack;
+    bestTrack.resetCovariance();
+    fitSuccess = fitTrack(bestTrack, mTrkParams[0].NLayers - 1, -1, -1, mTrkParams[0].FitIterationMaxChi2[1], 50.);
+    if (!fitSuccess) {
+      continue;
+    }
+    mTimeFrame->markUsedCluster(0, bestTrack.getClusterIndex(0));
+    mTimeFrame->markUsedCluster(1, bestTrack.getClusterIndex(1));
+    mTimeFrame->markUsedCluster(2, bestTrack.getClusterIndex(2));
+    mTimeFrame->getTracks(rof).emplace_back(bestTrack);
   }
 }
 
@@ -743,7 +848,12 @@ void Tracker::getGlobalConfiguration()
   auto& tc = o2::its::TrackerParamConfig::Instance();
   if (tc.useMatCorrTGeo) {
     setCorrType(o2::base::PropagatorImpl<float>::MatCorrType::USEMatCorrTGeo);
+  } else if (tc.useFastMaterial) {
+    setCorrType(o2::base::PropagatorImpl<float>::MatCorrType::USEMatCorrNONE);
+  } else {
+    setCorrType(o2::base::PropagatorImpl<float>::MatCorrType::USEMatCorrLUT);
   }
+  setNThreads(tc.nThreads);
   for (auto& params : mTrkParams) {
     if (params.NLayers == 7) {
       for (int i{0}; i < 7; ++i) {
@@ -772,6 +882,9 @@ void Tracker::getGlobalConfiguration()
     if (tc.trackletsPerClusterLimit >= 0) {
       params.TrackletsPerClusterLimit = tc.trackletsPerClusterLimit;
     }
+    if (tc.findShortTracks >= 0) {
+      params.FindShortTracks = tc.findShortTracks;
+    }
   }
 }
 
@@ -785,6 +898,15 @@ void Tracker::setBz(float bz)
 {
   mBz = bz;
   mTimeFrame->setBz(bz);
+}
+
+void Tracker::setNThreads(int n)
+{
+#ifdef WITH_OPENMP
+  mNThreads = n > 0 ? n : 1;
+#else
+  mNThreads = 1;
+#endif
 }
 
 } // namespace its

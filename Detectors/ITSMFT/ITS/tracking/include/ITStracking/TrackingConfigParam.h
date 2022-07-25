@@ -41,6 +41,7 @@ struct TrackerParamConfig : public o2::conf::ConfigurableParamHelper<TrackerPara
 
   // Use TGeo for mat. budget
   bool useMatCorrTGeo = false;
+  bool useFastMaterial = false;
   float sysErrY2[7] = {0}; // systematic error^2 in Y per layer
   float sysErrZ2[7] = {0}; // systematic error^2 in Z per layer
   float nSigmaCut = -1.f;
@@ -55,6 +56,8 @@ struct TrackerParamConfig : public o2::conf::ConfigurableParamHelper<TrackerPara
   int useTrackFollower = -1;
   float cellsPerClusterLimit = -1.f;
   float trackletsPerClusterLimit = -1.f;
+  int findShortTracks = -1;
+  int nThreads = 1;
 
   O2ParamDef(TrackerParamConfig, "ITSCATrackerParam");
 };

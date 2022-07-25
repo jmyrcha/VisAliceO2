@@ -45,13 +45,17 @@ struct fileMon {
   bool stopped = false;
 
   fileMon(const std::string& path, const std::string& filename);
+  fileMon(const std::string& filename, std::ifstream&& f);
 };
 
-fileMon::fileMon(const std::string& path, const std::string& filename)
+fileMon::fileMon(const std::string& path, const std::string& filename) : name(filename)
 {
   printf("Monitoring file %s\n", filename.c_str());
-  name = filename;
   file.open(path + "/" + filename, std::ifstream::in);
+}
+
+fileMon::fileMon(const std::string& filename, std::ifstream&& f) : file(std::move(f)), name(filename)
+{
 }
 
 class EPNMonitor
@@ -84,6 +88,8 @@ EPNMonitor::EPNMonitor(std::string path, bool infoLogger, int runNumber, std::st
 {
   mFilters.emplace_back("^Info in <");
   mFilters.emplace_back("^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{6}");
+  mFilters.emplace_back("^Warning in <Fit");
+  mFilters.emplace_back("^Warning in <TGraph");
   mInfoLoggerActive = infoLogger;
   mPath = path;
   mRunNumber = runNumber;
@@ -116,7 +122,7 @@ void EPNMonitor::sendLog(const std::string& file, const std::string& message)
 {
   if (mInfoLoggerActive) {
     mLoggerContext->setField(InfoLogger::InfoLoggerContext::FieldName::Facility, ("stderr/" + file).substr(0, 31));
-    mLoggerContext->setField(InfoLogger::InfoLoggerContext::FieldName::Run, mRunNumber == 0 ? std::to_string(mRunNumber) : "unspecified");
+    mLoggerContext->setField(InfoLogger::InfoLoggerContext::FieldName::Run, mRunNumber != 0 ? std::to_string(mRunNumber) : "unspecified");
     static const InfoLogger::InfoLogger::InfoLoggerMessageOption opt = {InfoLogger::InfoLogger::Severity::Error, 3, InfoLogger::InfoLogger::undefinedMessageOption.errorCode, InfoLogger::InfoLogger::undefinedMessageOption.sourceFile, InfoLogger::InfoLogger::undefinedMessageOption.sourceLine};
     mLogger->log(opt, *mLoggerContext, "stderr: %s", message.c_str());
   } else {
@@ -127,6 +133,15 @@ void EPNMonitor::sendLog(const std::string& file, const std::string& message)
 void EPNMonitor::thread()
 {
   printf("EPN stderr Monitor active\n");
+
+  try {
+    std::string syslogfile = "/var/log/infologger_syslog";
+    std::ifstream file;
+    file.open(syslogfile, std::ifstream::in);
+    file.seekg(0, file.end);
+    mFiles.emplace(std::piecewise_construct, std::forward_as_tuple(syslogfile), std::forward_as_tuple(std::string("SYSLOG"), std::move(file)));
+  } catch (...) {
+  }
 
   int fd;
   int wd;
