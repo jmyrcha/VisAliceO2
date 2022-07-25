@@ -155,7 +155,7 @@ void O2DPLDisplaySpec::run(ProcessingContext& pc)
       helper.mEvent.setFirstTForbit(tinfo.firstTForbit);
 
       helper.mEvent.setPrimaryVertex(pv);
-      helper.save(this->mJsonPath, this->mExt,this->mNumberOfFiles, this->mTrkMask, this->mClMask, tinfo.runNumber, tinfo.creation);
+      helper.save(this->mJsonPath, this->mExt, this->mNumberOfFiles, this->mTrkMask, this->mClMask, tinfo.runNumber, tinfo.creation);
       jsonsSaved++;
     }
 
