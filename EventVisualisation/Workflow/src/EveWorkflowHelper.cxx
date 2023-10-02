@@ -278,7 +278,7 @@ void EveWorkflowHelper::selectTowers()
     };
 
     if (mPrimaryVertexMode) {
-        LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++ towers primary" ;
+        LOG(info) << "+++++++++++++++++++++++++++++++++++++++++++++ towers primary" ;
       const auto trackIndex = mRecoCont->getPrimaryVertexMatchedTracks(); // Global ID's for associated tracks
       const auto vtxRefs = mRecoCont->getPrimaryVertexMatchedTrackRefs(); // references from vertex to these track IDs
       const auto totalPrimaryVertices = vtxRefs.size() - 1;               // The last entry is for unassigned tracks, ignore them
@@ -286,16 +286,16 @@ void EveWorkflowHelper::selectTowers()
       for (std::size_t iv = 0; iv < totalPrimaryVertices; iv++) {
         const auto& vtref = vtxRefs[iv];
 
-        // LOG(INFO) << "HMP " << allTriggersHMP.size();
+        // LOG(info) << "HMP " << allTriggersHMP.size();
         // to be improved to recognize PV
         /*for (std::size_t i = 0; i < allTriggersHMP.size(); i++) {
-            LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++ towers HMP" << i << " " << iv;
+            LOG(info) << "+++++++++++++++++++++++++++++++++++++++++++++ towers HMP" << i << " " << iv;
           mTotalDataTypes[GID::HMP]++;
           const auto& trig = allTriggersHMP[i];
           mPrimaryVertexTriggerGIDs[iv].emplace_back(GID{static_cast<unsigned int>(i), GID::HMP});
         }
 
-        LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++ towers PHOS" ;
+        LOG(info) << "+++++++++++++++++++++++++++++++++++++++++++++ towers PHOS" ;
         const auto triggersPHOS = gsl::span(trackIndex.data() + vtref.getFirstEntryOfSource(GID::PHS), vtref.getEntriesOfSource(GID::PHS));
 
         for (const auto& tvid : triggersPHOS) {
@@ -308,7 +308,7 @@ void EveWorkflowHelper::selectTowers()
         }
 
         const auto triggersEMCAL = gsl::span(trackIndex.data() + vtref.getFirstEntryOfSource(GID::EMC), vtref.getEntriesOfSource(GID::EMC));
-          LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++ towers EMCAL" ;
+          LOG(info) << "+++++++++++++++++++++++++++++++++++++++++++++ towers EMCAL" ;
         for (const auto& tvid : triggersEMCAL) {
           mTotalDataTypes[GID::EMC]++;
           const auto& trig = allTriggersEMCAL[tvid.getIndex()];
@@ -318,7 +318,7 @@ void EveWorkflowHelper::selectTowers()
           }
         }
       }
-        LOG(INFO) << "+++++++++++++++++++++++++++++++++++++++++++++ towers END" ;
+        LOG(info) << "+++++++++++++++++++++++++++++++++++++++++++++ towers END" ;
     } else {
       for (std::size_t i = 0; i < allTriggersHMP.size(); i++) {
         mTotalDataTypes[GID::HMP]++;
